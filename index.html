@@ -115,7 +115,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 110px;
+      max-width: 115px;
     }
     .pop-pill {
       font-size: 9px;
@@ -148,7 +148,6 @@
     }
     .ctrl-btn:hover { background: #1a1a22; color: var(--text); border-color: var(--border-hover); }
 
-    /* Spotify-style Progress Track & Timer */
     .progress-container {
       position: absolute;
       bottom: 0;
@@ -231,7 +230,7 @@
     </div>
 
     <div class="now-card">
-      <img id="cover" src="" alt="" />
+      <img id="cover" alt="Cover" />
       <div class="meta">
         <div class="top-row">
           <div>
@@ -243,7 +242,7 @@
               <div id="devicePill" class="badge" title="Active Device">Device</div>
               <button id="popBtn" class="pop-pill" onclick="popOut()" title="Pop out">↗</button>
             </div>
-            <div id="playlistPill" class="badge" title="Active Playlist">Playlist: —</div>
+            <div id="playlistPill" class="badge" title="Active Playlist">Spotify</div>
           </div>
         </div>
         <div class="controls">
@@ -271,20 +270,34 @@
       SPOTIFY_CLIENT_ID: "88d726c655c9441c8731d2eeddc9c8cb"
     };
 
+    // Embedded Spotify Logo SVG Data URI for idle state
+    const SPOTIFY_LOGO_SVG = "data:image/svg+xml;utf8," + encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="52" height="52">
+        <rect width="64" height="64" rx="6" fill="#1c1c24"/>
+        <path fill="#1db954" d="M32 14C22.06 14 14 22.06 14 32s8.06 18 18 18 18-8.06 18-18-8.06-18-18-18zm8.26 25.98c-.32.53-1.01.7-1.54.37-4.23-2.58-9.55-3.17-15.82-1.74-.6.14-1.2-.24-1.34-.84-.14-.6.24-1.2.84-1.34 6.86-1.57 12.74-.9 17.49 2 .53.33.7 1.02.37 1.55zm2.2-4.9c-.41.67-1.29.88-1.96.47-4.84-2.98-12.22-3.84-17.95-2.1-.75.23-1.55-.2-1.78-.95-.23-.75.2-1.55.95-1.78 6.55-1.99 14.68-1.03 20.27 2.4.67.41.88 1.29.47 1.96zm.19-5.11c-5.8-3.45-15.38-3.77-20.92-2.09-.89.27-1.83-.23-2.1-.12-.27-.89.23-1.83 1.12-2.1 6.36-1.93 16.94-1.56 23.63 2.41.8.47 1.06 1.51.59 2.31-.47.8-1.51 1.06-2.32.59z"/>
+      </svg>
+    `);
+
     const REDIRECT_URI = window.location.origin + window.location.pathname;
-    const SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state";
+    const SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative";
+
     let isPlaying = false;
     let trackDuration = 0;
     let currentProgress = 0;
-    let lastTrackData = null;
-    let cachedQueue = null;
+    let lastTrackData = JSON.parse(localStorage.getItem("sp_last_track") || "null");
+    let cachedQueue = JSON.parse(localStorage.getItem("sp_cached_queue") || "null");
+    let lastDeviceId = localStorage.getItem("sp_last_device_id") || null;
+    let lastDeviceName = localStorage.getItem("sp_last_device_name") || "Device";
+    const playlistNameCache = {};
+
+    document.getElementById("cover").src = SPOTIFY_LOGO_SVG;
 
     if (window.innerWidth <= 420 && window.innerHeight <= 340) {
       document.getElementById("popBtn").classList.add("hidden");
     }
 
     function formatTime(ms) {
-      const totalSeconds = Math.floor(ms / 1000);
+      const totalSeconds = Math.floor((ms || 0) / 1000);
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = totalSeconds % 60;
       return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
@@ -341,19 +354,23 @@
       if (Date.now() < expiresAt) return localStorage.getItem("sp_token");
       if (!refresh) return null;
 
-      const res = await fetch("https://accounts.spotify.com/api/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          client_id: CONFIG.SPOTIFY_CLIENT_ID,
-          grant_type: "refresh_token",
-          refresh_token: refresh
-        })
-      });
-      const data = await res.json();
-      if (data.access_token) {
-        saveTokens(data);
-        return data.access_token;
+      try {
+        const res = await fetch("https://accounts.spotify.com/api/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: CONFIG.SPOTIFY_CLIENT_ID,
+            grant_type: "refresh_token",
+            refresh_token: refresh
+          })
+        });
+        const data = await res.json();
+        if (data.access_token) {
+          saveTokens(data);
+          return data.access_token;
+        }
+      } catch (e) {
+        return localStorage.getItem("sp_token");
       }
       return null;
     }
@@ -364,78 +381,141 @@
       localStorage.setItem("sp_expires", String(Date.now() + (data.expires_in - 60) * 1000));
     }
 
-    async function spFetch(endpoint, method = "GET") {
+    async function spFetch(endpoint, method = "GET", bodyObj = null) {
       const token = await refreshTokenIfNeeded();
       if (!token) {
         document.getElementById("loginScreen").classList.remove("hidden");
         return null;
       }
-      const res = await fetch(`https://api.spotify.com/v1/me/player${endpoint}`, {
+      const opts = {
         method,
         headers: { Authorization: `Bearer ${token}` }
-      });
+      };
+      if (bodyObj) {
+        opts.headers["Content-Type"] = "application/json";
+        opts.body = JSON.stringify(bodyObj);
+      }
+      const res = await fetch(`https://api.spotify.com/v1/me/player${endpoint}`, opts);
       if (res.status === 204 || res.status === 202) return null;
       return res.ok ? res.json() : null;
+    }
+
+    async function resolvePlaylistName(playlistId, fallbackAlbum) {
+      if (playlistNameCache[playlistId]) {
+        document.getElementById("playlistPill").textContent = playlistNameCache[playlistId];
+        return;
+      }
+
+      // 1. Try Spotify public oEmbed endpoint first (works for Daily Mix, Daylist, Release Radar, and Spotify-owned playlists)
+      try {
+        const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(`https://open.spotify.com/playlist/${playlistId}`)}`;
+        const oRes = await fetch(oembedUrl);
+        if (oRes.ok) {
+          const oData = await oRes.json();
+          if (oData && oData.title) {
+            playlistNameCache[playlistId] = oData.title;
+            document.getElementById("playlistPill").textContent = oData.title;
+            return;
+          }
+        }
+      } catch (e) {}
+
+      // 2. Fallback to standard Web API endpoint for private/personal playlists
+      const token = await refreshTokenIfNeeded();
+      if (token) {
+        try {
+          const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}?fields=name`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.name) {
+              playlistNameCache[playlistId] = data.name;
+              document.getElementById("playlistPill").textContent = data.name;
+              return;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // 3. Final fallback so it never displays "—"
+      document.getElementById("playlistPill").textContent = fallbackAlbum || "Playlist";
     }
 
     async function syncDeck() {
       const [player, qData] = await Promise.all([spFetch(""), spFetch("/queue")]);
 
       if (player) {
-        if (player.device && player.device.name) {
-          document.getElementById("devicePill").textContent = player.device.name;
+        if (player.device) {
+          if (player.device.id) {
+            lastDeviceId = player.device.id;
+            localStorage.setItem("sp_last_device_id", lastDeviceId);
+          }
+          if (player.device.name) {
+            lastDeviceName = player.device.name;
+            localStorage.setItem("sp_last_device_name", lastDeviceName);
+          }
         }
         if (player.item) {
           lastTrackData = player;
+          localStorage.setItem("sp_last_track", JSON.stringify(player));
         }
+      } else if (lastTrackData) {
+        // Player returned 204 (idle/extended pause): mark cached state as paused
+        lastTrackData.is_playing = false;
       }
 
-      if (qData && qData.queue) {
+      // Only overwrite cachedQueue if Spotify returns a non-empty queue array
+      if (qData && Array.isArray(qData.queue) && qData.queue.length > 0) {
         cachedQueue = qData.queue;
+        localStorage.setItem("sp_cached_queue", JSON.stringify(cachedQueue));
       }
+
+      document.getElementById("devicePill").textContent = lastDeviceName;
 
       const activePlayer = (player && player.item) ? player : lastTrackData;
 
       if (activePlayer && activePlayer.item) {
-        isPlaying = activePlayer.is_playing;
-        trackDuration = activePlayer.item.duration_ms;
+        isPlaying = Boolean(player && player.is_playing);
+        trackDuration = activePlayer.item.duration_ms || 1;
         currentProgress = activePlayer.progress_ms || 0;
 
         document.getElementById("title").textContent = activePlayer.item.name;
         document.getElementById("artist").textContent = activePlayer.item.artists.map(a => a.name).join(", ");
-        document.getElementById("cover").src = activePlayer.item.album.images[0]?.url || "";
+        document.getElementById("cover").src = activePlayer.item.album?.images?.[0]?.url || SPOTIFY_LOGO_SVG;
         document.getElementById("playBtn").textContent = isPlaying ? "Pause" : "Play";
-        
+
         const pct = Math.min(100, (currentProgress / trackDuration) * 100);
         document.getElementById("progress").style.width = `${pct}%`;
         document.getElementById("timeDisplay").textContent = `${formatTime(currentProgress)} / ${formatTime(trackDuration)}`;
 
-        // Enhanced Playlist / Context Resolution
-        if (activePlayer.context && activePlayer.context.uri) {
-          const uriParts = activePlayer.context.uri.split(":");
-          const contextType = uriParts[1];
-          const contextId = uriParts[2];
+        const albumName = activePlayer.item.album?.name || "Spotify";
 
-          if (contextType === "playlist" && contextId) {
-            fetchPlaylistName(contextId);
-          } else if (contextType === "album" && activePlayer.item.album) {
-            document.getElementById("playlistPill").textContent = activePlayer.item.album.name;
-          } else if (contextType === "artist") {
-            document.getElementById("playlistPill").textContent = "Artist Radio";
-          } else if (contextType === "collection") {
+        if (activePlayer.context && activePlayer.context.uri) {
+          const uri = activePlayer.context.uri;
+          const uriParts = uri.split(":");
+          const lastPart = uriParts[uriParts.length - 1];
+
+          if (uri.includes(":playlist:") && lastPart) {
+            resolvePlaylistName(lastPart, albumName);
+          } else if (uri.includes(":album:")) {
+            document.getElementById("playlistPill").textContent = albumName;
+          } else if (uri.includes(":collection")) {
             document.getElementById("playlistPill").textContent = "Liked Songs";
+          } else if (uri.includes(":artist:")) {
+            document.getElementById("playlistPill").textContent = `${activePlayer.item.artists[0]?.name || "Artist"} Mix`;
           } else {
-            document.getElementById("playlistPill").textContent = contextType.charAt(0).toUpperCase() + contextType.slice(1);
+            document.getElementById("playlistPill").textContent = albumName;
           }
-        } else if (activePlayer.item.album) {
-          document.getElementById("playlistPill").textContent = activePlayer.item.album.name;
         } else {
-          document.getElementById("playlistPill").textContent = "Queue";
+          document.getElementById("playlistPill").textContent = albumName;
         }
+      } else {
+        document.getElementById("cover").src = SPOTIFY_LOGO_SVG;
       }
 
-      const queueToRender = qData?.queue || cachedQueue;
-      if (queueToRender) {
+      const queueToRender = (qData && Array.isArray(qData.queue) && qData.queue.length > 0) ? qData.queue : cachedQueue;
+      if (queueToRender && queueToRender.length > 0) {
         const next5 = queueToRender.slice(0, 5);
         document.getElementById("queue").innerHTML = next5.map((t, i) => `
           <div class="q-item" onclick="playQueueTrack('${t.uri}')" title="Click to play">
@@ -443,55 +523,115 @@
               <span class="q-num">${i + 1}</span>
               <span class="q-name">${t.name}</span>
             </div>
-            <span class="q-artist">${t.artists[0]?.name || ""}</span>
+            <span class="q-artist">${t.artists?.[0]?.name || ""}</span>
           </div>
         `).join("");
       }
     }
 
-    async function fetchPlaylistName(playlistId) {
-      const token = await refreshTokenIfNeeded();
-      if (!token) return;
+    async function getTargetDeviceId(token) {
       try {
-        const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}?fields=name`, {
+        const res = await fetch("https://api.spotify.com/v1/me/player/devices", {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {
           const data = await res.json();
-          if (data.name) {
-            document.getElementById("playlistPill").textContent = data.name;
-          }
+          const devices = data.devices || [];
+          const active = devices.find(d => d.is_active);
+          if (active) return active.id;
+          const matchedId = devices.find(d => d.id === lastDeviceId);
+          if (matchedId) return matchedId.id;
+          const matchedName = devices.find(d => d.name === lastDeviceName);
+          if (matchedName) return matchedName.id;
+          if (devices.length > 0) return devices[0].id;
         }
-      } catch (e) {
-        // Fallback silently if restricted
-      }
+      } catch (e) {}
+      return lastDeviceId;
     }
 
     async function togglePlay() {
-      await spFetch(isPlaying ? "/pause" : "/play", "PUT");
-      setTimeout(syncDeck, 300);
+      const token = await refreshTokenIfNeeded();
+      if (!token) return;
+
+      if (isPlaying) {
+        await fetch("https://api.spotify.com/v1/me/player/pause", {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        isPlaying = false;
+        document.getElementById("playBtn").textContent = "Play";
+        setTimeout(syncDeck, 300);
+        return;
+      }
+
+      // Attempting to unpause / play
+      let res = await fetch("https://api.spotify.com/v1/me/player/play", {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      // If device went to sleep during extended pause (404 / 403), wake it and restore track + queue state
+      if (!res.ok && lastTrackData && lastTrackData.item) {
+        const devId = await getTargetDeviceId(token);
+        const query = devId ? `?device_id=${devId}` : "";
+        const fallbackUris = [
+          lastTrackData.item.uri,
+          ...(cachedQueue || []).slice(0, 10).map(t => t.uri)
+        ].filter(Boolean);
+
+        await fetch(`https://api.spotify.com/v1/me/player/play${query}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            uris: fallbackUris,
+            position_ms: currentProgress || 0
+          })
+        });
+      }
+
+      setTimeout(syncDeck, 350);
     }
 
     async function skipTrack() {
       const token = await refreshTokenIfNeeded();
       if (!token) return;
-      await fetch("https://api.spotify.com/v1/me/player/next", {
+      const res = await fetch("https://api.spotify.com/v1/me/player/next", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` }
       });
+      // If idle, play the first song in the cached queue directly
+      if (!res.ok && cachedQueue && cachedQueue.length > 0) {
+        await playQueueTrack(cachedQueue[0].uri);
+        return;
+      }
       setTimeout(syncDeck, 400);
     }
 
     async function playQueueTrack(trackUri) {
       const token = await refreshTokenIfNeeded();
       if (!token) return;
-      await fetch("https://api.spotify.com/v1/me/player/play", {
+      const devId = await getTargetDeviceId(token);
+      const query = devId ? `?device_id=${devId}` : "";
+
+      // Build queue continuation starting from the clicked track
+      let urisToPlay = [trackUri];
+      if (cachedQueue && cachedQueue.length > 0) {
+        const idx = cachedQueue.findIndex(t => t.uri === trackUri);
+        if (idx !== -1) {
+          urisToPlay = cachedQueue.slice(idx, idx + 15).map(t => t.uri);
+        }
+      }
+
+      await fetch(`https://api.spotify.com/v1/me/player/play${query}`, {
         method: "PUT",
         headers: { 
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ uris: [trackUri] })
+        body: JSON.stringify({ uris: urisToPlay })
       });
       setTimeout(syncDeck, 400);
     }
@@ -504,7 +644,11 @@
       const percent = Math.max(0, Math.min(1, clickX / width));
       const targetMs = Math.floor(trackDuration * percent);
 
-      if (lastTrackData) lastTrackData.progress_ms = targetMs;
+      currentProgress = targetMs;
+      if (lastTrackData) {
+        lastTrackData.progress_ms = targetMs;
+        localStorage.setItem("sp_last_track", JSON.stringify(lastTrackData));
+      }
       document.getElementById("progress").style.width = `${percent * 100}%`;
       document.getElementById("timeDisplay").textContent = `${formatTime(targetMs)} / ${formatTime(trackDuration)}`;
 
@@ -514,7 +658,24 @@
         method: "PUT",
         headers: { Authorization: `Bearer ${token}` }
       });
-      setTimeout(syncDeck, 200);
+      setTimeout(syncDeck, 250);
+    }
+
+    // Periodic keep-alive ping while paused so the active Spotify device stays registered
+    async function keepSessionAlive() {
+      if (isPlaying || !lastDeviceId) return;
+      const token = await refreshTokenIfNeeded();
+      if (!token) return;
+      try {
+        await fetch("https://api.spotify.com/v1/me/player", {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ device_ids: [lastDeviceId], play: false })
+        });
+      } catch (e) {}
     }
 
     function popOut() {
@@ -533,6 +694,7 @@
         document.getElementById("loginScreen").classList.add("hidden");
         syncDeck();
         setInterval(syncDeck, 3000);
+        setInterval(keepSessionAlive, 45000);
       }
     }
 
