@@ -76,6 +76,7 @@
       align-items: center;
       position: relative;
       overflow: hidden;
+      padding-bottom: 16px; /* Make room for progress bar & timer */
     }
     #cover {
       width: 52px;
@@ -91,7 +92,6 @@
     #title { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
     #artist { font-size: 10px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
 
-    /* Right-side badges container */
     .badges {
       display: flex;
       flex-direction: column;
@@ -142,11 +142,21 @@
     }
     .util-btn:hover { color: var(--text); background: #1a1a22; }
 
-    .progress-track {
+    /* Spotify-style Progress Track & Timer */
+    .progress-container {
       position: absolute;
       bottom: 0;
       left: 0;
       right: 0;
+      height: 14px;
+      display: flex;
+      align-items: center;
+    }
+    .progress-track {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 76px; /* Room for current/total MM:SS timer */
       height: 4px;
       background: #1a1a22;
       cursor: pointer;
@@ -158,6 +168,14 @@
       background: #ededef;
       pointer-events: none;
       transition: width 0.1s linear;
+    }
+    #timeDisplay {
+      position: absolute;
+      right: 6px;
+      bottom: 2px;
+      font-size: 9px;
+      color: var(--sub);
+      font-variant-numeric: tabular-nums;
     }
 
     .q-header {
@@ -200,14 +218,12 @@
 <body>
 
   <div class="shell">
-    <!-- SPOTIFY LOGIN SCREEN -->
     <div id="loginScreen" class="overlay hidden">
       <h2>Connect Spotify</h2>
       <p>Authorize session to sync player control.</p>
       <button class="btn-primary" onclick="startSpotifyAuth()">Connect</button>
     </div>
 
-    <!-- MAIN DECK -->
     <div class="now-card">
       <img id="cover" src="" alt="" />
       <div class="meta">
@@ -229,8 +245,11 @@
           </div>
         </div>
       </div>
-      <div class="progress-track" id="progressTrack" onclick="scrubTrack(event)">
-        <div id="progress"></div>
+      <div class="progress-container">
+        <div class="progress-track" id="progressTrack" onclick="scrubTrack(event)">
+          <div id="progress"></div>
+        </div>
+        <div id="timeDisplay">0:00 / 0:00</div>
       </div>
     </div>
 
@@ -250,11 +269,19 @@
     const SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state";
     let isPlaying = false;
     let trackDuration = 0;
+    let currentProgress = 0;
     let lastTrackData = null;
-    let cachedPlaylistName = "";
+    let cachedQueue = null;
 
     if (window.innerWidth <= 420 && window.innerHeight <= 340) {
       document.getElementById("popBtn").classList.add("hidden");
+    }
+
+    function formatTime(ms) {
+      const totalSeconds = Math.floor(ms / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
     }
 
     function randomString(len) {
@@ -352,45 +379,55 @@
         if (player.device && player.device.name) {
           document.getElementById("devicePill").textContent = player.device.name;
         }
-
         if (player.item) {
           lastTrackData = player;
-        }
-
-        const activePlayer = player.item ? player : lastTrackData;
-
-        if (activePlayer && activePlayer.item) {
-          isPlaying = activePlayer.is_playing;
-          trackDuration = activePlayer.item.duration_ms;
-          document.getElementById("title").textContent = activePlayer.item.name;
-          document.getElementById("artist").textContent = activePlayer.item.artists.map(a => a.name).join(", ");
-          document.getElementById("cover").src = activePlayer.item.album.images[0]?.url || "";
-          document.getElementById("playBtn").textContent = isPlaying ? "Pause" : "Play";
-          
-          const pct = Math.min(100, ((activePlayer.progress_ms || 0) / trackDuration) * 100);
-          document.getElementById("progress").style.width = `${pct}%`;
-
-          // Parse Context/Playlist correctly
-          if (activePlayer.context && activePlayer.context.uri) {
-            const uriParts = activePlayer.context.uri.split(":");
-            const contextType = uriParts[1]; // e.g., 'playlist', 'album', 'artist'
-            const contextId = uriParts[2];
-
-            if (contextType === "playlist" && contextId) {
-              fetchPlaylistName(contextId);
-            } else if (contextType === "album" && activePlayer.item.album) {
-              document.getElementById("playlistPill").textContent = `Album: ${activePlayer.item.album.name}`;
-            } else {
-              document.getElementById("playlistPill").textContent = `Context: ${contextType}`;
-            }
-          } else {
-            document.getElementById("playlistPill").textContent = "Playlist: —";
-          }
         }
       }
 
       if (qData && qData.queue) {
-        const next5 = qData.queue.slice(0, 5);
+        cachedQueue = qData.queue;
+      }
+
+      const activePlayer = (player && player.item) ? player : lastTrackData;
+
+      if (activePlayer && activePlayer.item) {
+        isPlaying = activePlayer.is_playing;
+        trackDuration = activePlayer.item.duration_ms;
+        currentProgress = activePlayer.progress_ms || 0;
+
+        document.getElementById("title").textContent = activePlayer.item.name;
+        document.getElementById("artist").textContent = activePlayer.item.artists.map(a => a.name).join(", ");
+        document.getElementById("cover").src = activePlayer.item.album.images[0]?.url || "";
+        document.getElementById("playBtn").textContent = isPlaying ? "Pause" : "Play";
+        
+        const pct = Math.min(100, (currentProgress / trackDuration) * 100);
+        document.getElementById("progress").style.width = `${pct}%`;
+        document.getElementById("timeDisplay").textContent = `${formatTime(currentProgress)} / ${formatTime(trackDuration)}`;
+
+        if (activePlayer.context && activePlayer.context.uri) {
+          const uriParts = activePlayer.context.uri.split(":");
+          const contextType = uriParts[1];
+          const contextId = uriParts[2];
+
+          if (contextType === "playlist" && contextId) {
+            fetchPlaylistName(contextId);
+          } else if (contextType === "album" && activePlayer.item.album) {
+            document.getElementById("playlistPill").textContent = activePlayer.item.album.name;
+          } else if (contextType === "artist") {
+            document.getElementById("playlistPill").textContent = "Artist Radio";
+          } else {
+            document.getElementById("playlistPill").textContent = contextType.charAt(0).toUpperCase() + contextType.slice(1);
+          }
+        } else if (activePlayer.item.album) {
+          document.getElementById("playlistPill").textContent = activePlayer.item.album.name;
+        } else {
+          document.getElementById("playlistPill").textContent = "Queue";
+        }
+      }
+
+      const queueToRender = qData?.queue || cachedQueue;
+      if (queueToRender) {
+        const next5 = queueToRender.slice(0, 5);
         document.getElementById("queue").innerHTML = next5.map((t, i) => `
           <div class="q-item" onclick="playQueueTrack('${t.uri}')" title="Click to play">
             <div class="q-left">
@@ -413,7 +450,7 @@
         if (res.ok) {
           const data = await res.json();
           if (data.name) {
-            document.getElementById("playlistPill").textContent = `${data.name}`;
+            document.getElementById("playlistPill").textContent = data.name;
           }
         }
       } catch (e) {
@@ -457,6 +494,10 @@
       const width = rect.width;
       const percent = Math.max(0, Math.min(1, clickX / width));
       const targetMs = Math.floor(trackDuration * percent);
+
+      if (lastTrackData) lastTrackData.progress_ms = targetMs;
+      document.getElementById("progress").style.width = `${percent * 100}%`;
+      document.getElementById("timeDisplay").textContent = `${formatTime(targetMs)} / ${formatTime(trackDuration)}`;
 
       const token = await refreshTokenIfNeeded();
       if (!token) return;
