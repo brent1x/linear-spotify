@@ -87,7 +87,23 @@
     }
     .meta { flex: 1; min-width: 0; }
     .top-row { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
-    #title { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #title { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+    
+    /* Playlist / Context Pill Badge */
+    #playlistPill {
+      font-size: 9px;
+      font-weight: 500;
+      background: #1a1a22;
+      color: var(--sub);
+      border: 1px solid var(--border);
+      padding: 1px 6px;
+      border-radius: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 110px;
+    }
+
     #artist { font-size: 10px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
 
     .controls { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
@@ -106,6 +122,24 @@
       transition: all 0.1s ease;
     }
     .ctrl-btn:hover { background: #1a1a22; color: var(--text); border-color: var(--border-hover); }
+    
+    /* Device Indicator Badge */
+    #deviceLabel {
+      font-size: 9px;
+      color: var(--sub);
+      background: #17171f;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      height: 22px;
+      padding: 0 6px;
+      display: flex;
+      align-items: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 90px;
+    }
+
     .util-btn {
       background: transparent;
       color: var(--sub);
@@ -189,10 +223,11 @@
       <div class="meta">
         <div class="top-row">
           <div id="title">Idle</div>
+          <div id="playlistPill" title="Active Playlist">Ready</div>
         </div>
         <div id="artist">Waiting for playback</div>
         <div class="controls">
-          <button id="muteBtn" class="ctrl-btn" onclick="toggleMute()" title="Mute/Unmute">Mute</button>
+          <div id="deviceLabel" title="Active Device">Device</div>
           <button id="playBtn" class="ctrl-btn" onclick="togglePlay()" title="Play/Pause">Play</button>
           <button class="ctrl-btn" onclick="skipTrack()" title="Next">Next</button>
           <div style="margin-left:auto; display:flex; gap:2px;">
@@ -222,8 +257,7 @@
     const SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state";
     let isPlaying = false;
     let trackDuration = 0;
-    let previousVolume = 50;
-    let isMuted = false;
+    let lastTrackData = null;
 
     if (window.innerWidth <= 420 && window.innerHeight <= 340) {
       document.getElementById("popBtn").classList.add("hidden");
@@ -326,18 +360,45 @@
       const [player, qData] = await Promise.all([spFetch(""), spFetch("/queue")]);
 
       if (player) {
-        if (player.device && player.device.volume_percent !== undefined && !isMuted) {
-          previousVolume = player.device.volume_percent;
+        // Update Device Label
+        if (player.device && player.device.name) {
+          document.getElementById("deviceLabel").textContent = player.device.name;
         }
+
+        // Cache item if playing or paused to maintain state
         if (player.item) {
-          isPlaying = player.is_playing;
-          trackDuration = player.item.duration_ms;
-          document.getElementById("title").textContent = player.item.name;
-          document.getElementById("artist").textContent = player.item.artists.map(a => a.name).join(", ");
-          document.getElementById("cover").src = player.item.album.images[0]?.url || "";
+          lastTrackData = player;
+        }
+
+        const activePlayer = player.item ? player : lastTrackData;
+
+        if (activePlayer && activePlayer.item) {
+          isPlaying = activePlayer.is_playing;
+          trackDuration = activePlayer.item.duration_ms;
+          document.getElementById("title").textContent = activePlayer.item.name;
+          document.getElementById("artist").textContent = activePlayer.item.artists.map(a => a.name).join(", ");
+          document.getElementById("cover").src = activePlayer.item.album.images[0]?.url || "";
           document.getElementById("playBtn").textContent = isPlaying ? "Pause" : "Play";
-          const pct = Math.min(100, ((player.progress_ms || 0) / trackDuration) * 100);
+          
+          const pct = Math.min(100, ((activePlayer.progress_ms || 0) / trackDuration) * 100);
           document.getElementById("progress").style.width = `${pct}%`;
+
+          // Parse Playlist / Context info if available
+          if (activePlayer.context && activePlayer.context.type) {
+            let contextType = activePlayer.context.type;
+            let pillText = contextType.charAt(0).toUpperCase() + contextType.slice(1);
+            
+            // If it's a playlist, fetch its name or show generic
+            if (contextType === "playlist" && activePlayer.context.uri) {
+              const playlistId = activePlayer.context.uri.split(":").pop();
+              // Short fetch to grab playlist name smoothly
+              fetchPlaylistName(playlistId);
+            } else {
+              document.getElementById("playlistPill").textContent = pillText;
+            }
+          } else {
+            document.getElementById("playlistPill").textContent = "Spotify";
+          }
         }
       }
 
@@ -352,6 +413,24 @@
             <span class="q-artist">${t.artists[0]?.name || ""}</span>
           </div>
         `).join("");
+      }
+    }
+
+    async function fetchPlaylistName(playlistId) {
+      const token = await refreshTokenIfNeeded();
+      if (!token) return;
+      try {
+        const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}?fields=name`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.name) {
+            document.getElementById("playlistPill").textContent = data.name;
+          }
+        }
+      } catch (e) {
+        // Fallback silently if rate-limited or restricted
       }
     }
 
@@ -370,31 +449,9 @@
       setTimeout(syncDeck, 400);
     }
 
-    async function toggleMute() {
-      const token = await refreshTokenIfNeeded();
-      if (!token) return;
-      
-      let targetVol = 0;
-      if (isMuted) {
-        targetVol = previousVolume > 0 ? previousVolume : 50;
-        isMuted = false;
-        document.getElementById("muteBtn").textContent = "Mute";
-      } else {
-        isMuted = true;
-        document.getElementById("muteBtn").textContent = "Unmute";
-      }
-
-      await fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${targetVol}`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setTimeout(syncDeck, 300);
-    }
-
     async function playQueueTrack(trackUri) {
       const token = await refreshTokenIfNeeded();
       if (!token) return;
-      // Start playback directly at the selected track URI
       await fetch("https://api.spotify.com/v1/me/player/play", {
         method: "PUT",
         headers: { 
