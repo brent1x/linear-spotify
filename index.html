@@ -53,18 +53,6 @@
     .hidden { display: none !important; }
     .overlay h2 { font-size: 13px; font-weight: 500; color: var(--text); }
     .overlay p { font-size: 11px; color: var(--sub); }
-    .pin-input {
-      background: var(--card);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 6px 10px;
-      border-radius: 5px;
-      font-size: 12px;
-      text-align: center;
-      width: 150px;
-      outline: none;
-    }
-    .pin-input:focus { border-color: var(--border-hover); }
     .btn-primary {
       background: #ededef;
       color: #08080a;
@@ -185,21 +173,14 @@
 <body>
 
   <div class="shell">
-    <div id="lockScreen" class="overlay">
-      <h2>Enter Passcode</h2>
-      <form onsubmit="unlockApp(event)" style="display:flex; gap:6px;">
-        <input id="pinInput" type="password" class="pin-input" placeholder="••••••••" autofocus />
-        <button type="submit" class="btn-primary">Enter</button>
-      </form>
-      <p id="lockErr" style="color:#e5534b; font-size:10px;"></p>
-    </div>
-
+    <!-- SPOTIFY LOGIN SCREEN -->
     <div id="loginScreen" class="overlay hidden">
       <h2>Connect Spotify</h2>
       <p>Authorize session to sync player control.</p>
       <button class="btn-primary" onclick="startSpotifyAuth()">Connect</button>
     </div>
 
+    <!-- MAIN DECK -->
     <div class="now-card">
       <img id="cover" src="" alt="" />
       <div class="meta">
@@ -213,7 +194,7 @@
           <button class="ctrl-btn" onclick="command('POST', 'next')" title="Next">Next</button>
           <div style="margin-left:auto; display:flex; gap:2px;">
             <button id="popBtn" class="util-btn" onclick="popOut()" title="Pop out">↗</button>
-            <button class="util-btn" onclick="lockApp()" title="Lock">Lock</button>
+            <button class="util-btn" onclick="logoutSpotify()" title="Disconnect">Logout</button>
           </div>
         </div>
       </div>
@@ -231,9 +212,7 @@
 
   <script>
     const CONFIG = {
-      SPOTIFY_CLIENT_ID: "88d726c655c9441c8731d2eeddc9c8cb",
-      // SHA-256 hash for "snozzify"
-      PASSCODE_HASH: "b826f4325a74e1d9047b0bbdbcb80503f1912a201217e9f34fbf1fa000ea35cf"
+      SPOTIFY_CLIENT_ID: "88d726c655c9441c8731d2eeddc9c8cb"
     };
 
     const REDIRECT_URI = window.location.origin + window.location.pathname;
@@ -245,26 +224,7 @@
       document.getElementById("popBtn").classList.add("hidden");
     }
 
-    async function hashString(str) {
-      const data = new TextEncoder().encode(str);
-      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-      return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
-    }
-
-    async function unlockApp(e) {
-      e.preventDefault();
-      const val = document.getElementById("pinInput").value.trim().toLowerCase();
-      const hashedInput = await hashString(val);
-      if (hashedInput === CONFIG.PASSCODE_HASH) {
-        localStorage.setItem("deck_unlocked", "true");
-        document.getElementById("lockScreen").classList.add("hidden");
-        bootSpotify();
-      } else {
-        document.getElementById("lockErr").textContent = "Incorrect passcode";
-      }
-    }
-
-    function lockApp() {
+    function logoutSpotify() {
       localStorage.clear();
       location.reload();
     }
@@ -358,7 +318,6 @@
     }
 
     async function syncDeck() {
-      if (localStorage.getItem("deck_unlocked") !== "true") return;
       const [player, qData] = await Promise.all([spFetch(""), spFetch("/queue")]);
 
       if (player && player.item) {
@@ -414,7 +373,7 @@
     }
 
     function popOut() {
-      window.open(location.hrf, "SpotifyMiniDeck", "width=400,height=300,menubar=no,toolbar=no,location=no,status=no,resizable=no");
+      window.open(location.href, "SpotifyMiniDeck", "width=400,height=300,menubar=no,toolbar=no,location=no,status=no,resizable=no");
     }
 
     async function bootSpotify() {
@@ -432,10 +391,7 @@
       }
     }
 
-    if (localStorage.getItem("deck_unlocked") === "true") {
-      document.getElementById("lockScreen").classList.add("hidden");
-      bootSpotify();
-    }
+    bootSpotify();
   </script>
 </body>
 </html>
