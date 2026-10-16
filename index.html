@@ -89,8 +89,8 @@
     .top-row { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
     #title { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
     
-    /* Playlist / Context Pill Badge */
-    #playlistPill {
+    /* Device / Top Pill Badge */
+    #devicePill {
       font-size: 9px;
       font-weight: 500;
       background: #1a1a22;
@@ -101,10 +101,20 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 110px;
+      max-width: 120px;
     }
 
     #artist { font-size: 10px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+    
+    /* Playlist Field */
+    #playlistField {
+      font-size: 9px;
+      color: var(--sub);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
 
     .controls { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
     .ctrl-btn {
@@ -122,23 +132,6 @@
       transition: all 0.1s ease;
     }
     .ctrl-btn:hover { background: #1a1a22; color: var(--text); border-color: var(--border-hover); }
-    
-    /* Device Indicator Badge */
-    #deviceLabel {
-      font-size: 9px;
-      color: var(--sub);
-      background: #17171f;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      height: 22px;
-      padding: 0 6px;
-      display: flex;
-      align-items: center;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 90px;
-    }
 
     .util-btn {
       background: transparent;
@@ -223,16 +216,15 @@
       <div class="meta">
         <div class="top-row">
           <div id="title">Idle</div>
-          <div id="playlistPill" title="Active Playlist">Ready</div>
+          <div id="devicePill" title="Active Device">Device</div>
         </div>
         <div id="artist">Waiting for playback</div>
+        <div id="playlistField">Playlist: —</div>
         <div class="controls">
-          <div id="deviceLabel" title="Active Device">Device</div>
           <button id="playBtn" class="ctrl-btn" onclick="togglePlay()" title="Play/Pause">Play</button>
           <button class="ctrl-btn" onclick="skipTrack()" title="Next">Next</button>
           <div style="margin-left:auto; display:flex; gap:2px;">
             <button id="popBtn" class="util-btn" onclick="popOut()" title="Pop out">↗</button>
-            <button class="util-btn" onclick="logoutSpotify()" title="Disconnect">Logout</button>
           </div>
         </div>
       </div>
@@ -261,11 +253,6 @@
 
     if (window.innerWidth <= 420 && window.innerHeight <= 340) {
       document.getElementById("popBtn").classList.add("hidden");
-    }
-
-    function logoutSpotify() {
-      localStorage.clear();
-      location.reload();
     }
 
     function randomString(len) {
@@ -360,9 +347,9 @@
       const [player, qData] = await Promise.all([spFetch(""), spFetch("/queue")]);
 
       if (player) {
-        // Update Device Label
+        // Update Device Pill
         if (player.device && player.device.name) {
-          document.getElementById("deviceLabel").textContent = player.device.name;
+          document.getElementById("devicePill").textContent = player.device.name;
         }
 
         // Cache item if playing or paused to maintain state
@@ -383,21 +370,18 @@
           const pct = Math.min(100, ((activePlayer.progress_ms || 0) / trackDuration) * 100);
           document.getElementById("progress").style.width = `${pct}%`;
 
-          // Parse Playlist / Context info if available
+          // Parse Playlist / Context info
           if (activePlayer.context && activePlayer.context.type) {
             let contextType = activePlayer.context.type;
-            let pillText = contextType.charAt(0).toUpperCase() + contextType.slice(1);
-            
-            // If it's a playlist, fetch its name or show generic
             if (contextType === "playlist" && activePlayer.context.uri) {
               const playlistId = activePlayer.context.uri.split(":").pop();
-              // Short fetch to grab playlist name smoothly
               fetchPlaylistName(playlistId);
             } else {
-              document.getElementById("playlistPill").textContent = pillText;
+              let capitalized = contextType.charAt(0).toUpperCase() + contextType.slice(1);
+              document.getElementById("playlistField").textContent = `Playlist: ${capitalized}`;
             }
           } else {
-            document.getElementById("playlistPill").textContent = "Spotify";
+            document.getElementById("playlistField").textContent = "Playlist: —";
           }
         }
       }
@@ -426,11 +410,11 @@
         if (res.ok) {
           const data = await res.json();
           if (data.name) {
-            document.getElementById("playlistPill").textContent = data.name;
+            document.getElementById("playlistField").textContent = `Playlist: ${data.name}`;
           }
         }
       } catch (e) {
-        // Fallback silently if rate-limited or restricted
+        // Fallback silently
       }
     }
 
