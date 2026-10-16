@@ -253,7 +253,8 @@
 
     async function unlockApp(e) {
       e.preventDefault();
-      const val = document.getElementById("pinInput").value;
+      // Added .trim() and .toLowerCase() to prevent spacing/capitalization errors
+      const val = document.getElementById("pinInput").value.trim().toLowerCase();
       const hashedInput = await hashString(val);
       if (hashedInput === CONFIG.PASSCODE_HASH) {
         localStorage.setItem("deck_unlocked", "true");
