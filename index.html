@@ -6,17 +6,18 @@
   <title>Mini Deck</title>
   <style>
     :root {
-      --bg: #0b0b0e;
-      --card: #15151b;
-      --row: #121217;
-      --border: #24242e;
-      --text: #f3f3f7;
-      --sub: #8a8a9b;
-      --accent: #1db954;
+      --bg: #0e0e11;
+      --card: #141418;
+      --row: #101014;
+      --border: #22222b;
+      --border-hover: #333342;
+      --text: #ededef;
+      --sub: #8a8a9e;
+      --accent: #ededef;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; user-select: none; }
     body {
-      background: #050507;
+      background: #08080a;
       color: var(--text);
       display: flex;
       align-items: center;
@@ -24,7 +25,6 @@
       height: 100vh;
       overflow: hidden;
     }
-    /* Locks footprint to 400x300 max */
     .shell {
       width: 100vw;
       height: 100vh;
@@ -39,7 +39,7 @@
       position: relative;
     }
 
-    /* Overlay Screens (Passcode & Connect) */
+    /* Overlay Screens */
     .overlay {
       position: absolute;
       inset: 0;
@@ -54,36 +54,38 @@
       text-align: center;
     }
     .hidden { display: none !important; }
-    .overlay h2 { font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
+    .overlay h2 { font-size: 13px; font-weight: 500; letter-spacing: -0.01em; color: var(--text); }
     .overlay p { font-size: 11px; color: var(--sub); }
     .pin-input {
       background: var(--card);
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 7px 12px;
-      border-radius: 6px;
-      font-size: 13px;
+      padding: 6px 10px;
+      border-radius: 5px;
+      font-size: 12px;
       text-align: center;
-      width: 160px;
+      width: 150px;
       outline: none;
     }
-    .pin-input:focus { border-color: var(--accent); }
+    .pin-input:focus { border-color: var(--border-hover); }
     .btn-primary {
-      background: var(--accent);
-      color: #000;
-      font-weight: 700;
-      font-size: 12px;
-      padding: 7px 16px;
+      background: #ededef;
+      color: #08080a;
+      font-weight: 500;
+      font-size: 11px;
+      padding: 6px 14px;
       border: none;
-      border-radius: 20px;
+      border-radius: 5px;
       cursor: pointer;
+      transition: opacity 0.15s;
     }
+    .btn-primary:hover { opacity: 0.85; }
 
     /* Player Header */
     .now-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 8px;
       display: flex;
       gap: 10px;
@@ -92,70 +94,74 @@
       overflow: hidden;
     }
     #cover {
-      width: 56px;
-      height: 56px;
-      border-radius: 6px;
-      background: #22222b;
+      width: 52px;
+      height: 52px;
+      border-radius: 5px;
+      background: #1c1c24;
       object-fit: cover;
       flex-shrink: 0;
     }
     .meta { flex: 1; min-width: 0; }
     .top-row { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
-    #title { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #artist { font-size: 11px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+    #title { font-size: 12px; font-weight: 500; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #artist { font-size: 10px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
 
-    .controls { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    /* Linear Minimal UI Controls */
+    .controls { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
     .ctrl-btn {
-      background: #23232e;
-      color: var(--text);
-      border: none;
-      border-radius: 6px;
-      height: 24px;
-      padding: 0 9px;
-      font-size: 11px;
+      background: transparent;
+      color: var(--sub);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      height: 22px;
+      padding: 0 8px;
+      font-size: 10px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.15s;
+      transition: all 0.1s ease;
     }
-    .ctrl-btn:hover { background: var(--accent); color: #000; }
+    .ctrl-btn:hover { background: #1a1a22; color: var(--text); border-color: var(--border-hover); }
     .util-btn {
       background: transparent;
       color: var(--sub);
-      border: 1px solid var(--border);
-      padding: 0 6px;
-      height: 22px;
+      border: 1px solid transparent;
+      padding: 0 5px;
+      height: 20px;
       font-size: 10px;
-      border-radius: 5px;
+      border-radius: 4px;
       cursor: pointer;
     }
-    .util-btn:hover { color: var(--text); border-color: var(--sub); }
+    .util-btn:hover { color: var(--text); background: #1a1a22; }
 
-    /* Progress Bar */
-    .progress-wrap {
+    /* Interactive Scrubbing Progress Bar */
+    .progress-track {
       position: absolute;
       bottom: 0;
       left: 0;
       right: 0;
-      height: 2px;
-      background: #23232e;
+      height: 4px;
+      background: #1a1a22;
+      cursor: pointer;
     }
+    .progress-track:hover { height: 6px; }
     #progress {
       height: 100%;
       width: 0%;
-      background: var(--accent);
-      transition: width 0.4s linear;
+      background: #ededef;
+      pointer-events: none;
+      transition: width 0.1s linear;
     }
 
     /* Queue Section */
     .q-header {
       display: flex;
       justify-content: space-between;
-      font-size: 10px;
-      font-weight: 700;
+      font-size: 9px;
+      font-weight: 500;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.08em;
       color: var(--sub);
       padding: 0 2px;
     }
@@ -164,22 +170,22 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      gap: 3px;
+      gap: 2px;
     }
     .q-item {
       background: var(--row);
-      border: 1px solid #1b1b23;
+      border: 1px solid #17171d;
       border-radius: 5px;
       padding: 4px 8px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       font-size: 11px;
-      height: 28px;
+      height: 27px;
     }
     .q-left { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; padding-right: 8px; }
-    .q-num { color: var(--sub); font-size: 10px; width: 12px; }
-    .q-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .q-num { color: var(--sub); font-size: 9px; width: 10px; }
+    .q-name { font-weight: 400; color: #dedee2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .q-artist { color: var(--sub); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 115px; flex-shrink: 0; }
   </style>
 </head>
@@ -188,79 +194,74 @@
   <div class="shell">
     <!-- 1. PASSCODE LOCK SCREEN -->
     <div id="lockScreen" class="overlay">
-      <h2>🔒 Mini Deck Locked</h2>
+      <h2>Enter Passcode</h2>
       <form onsubmit="unlockApp(event)" style="display:flex; gap:6px;">
-        <input id="pinInput" type="password" class="pin-input" placeholder="Passcode" autofocus />
-        <button type="submit" class="btn-primary">Go</button>
+        <input id="pinInput" type="password" class="pin-input" placeholder="••••••••" autofocus />
+        <button type="submit" class="btn-primary">Enter</button>
       </form>
-      <p id="lockErr" style="color:#ff5555;"></p>
+      <p id="lockErr" style="color:#e5534b; font-size:10px;"></p>
     </div>
 
     <!-- 2. SPOTIFY LOGIN SCREEN -->
     <div id="loginScreen" class="overlay hidden">
       <h2>Connect Spotify</h2>
-      <p>Authorize your browser to view & control playback.</p>
-      <button class="btn-primary" onclick="startSpotifyAuth()">Connect Account</button>
+      <p>Authorize session to sync player control.</p>
+      <button class="btn-primary" onclick="startSpotifyAuth()">Connect</button>
     </div>
 
-    <!-- 3. MAIN 400x300 DECK -->
+    <!-- 3. MAIN DECK -->
     <div class="now-card">
       <img id="cover" src="" alt="" />
       <div class="meta">
         <div class="top-row">
-          <div id="title">Nothing Playing</div>
+          <div id="title">Idle</div>
         </div>
-        <div id="artist">Open Spotify & play a track</div>
+        <div id="artist">Waiting for playback</div>
         <div class="controls">
-          <button class="ctrl-btn" onclick="command('POST', 'previous')" title="Previous">⏮</button>
-          <button id="playBtn" class="ctrl-btn" onclick="togglePlay()" title="Play/Pause">▶</button>
-          <button class="ctrl-btn" onclick="command('POST', 'next')" title="Next">⏭</button>
-          <div style="margin-left:auto; display:flex; gap:4px;">
-            <button id="popBtn" class="util-btn" onclick="popOut()" title="Pop out 400x300 window">↗</button>
-            <button class="util-btn" onclick="lockApp()" title="Lock & Disconnect">🔒</button>
+          <button class="ctrl-btn" onclick="command('POST', 'previous')" title="Previous">Prev</button>
+          <button id="playBtn" class="ctrl-btn" onclick="togglePlay()" title="Play/Pause">Play</button>
+          <button class="ctrl-btn" onclick="command('POST', 'next')" title="Next">Next</button>
+          <div style="margin-left:auto; display:flex; gap:2px;">
+            <button id="popBtn" class="util-btn" onclick="popOut()" title="Pop out">↗</button>
+            <button class="util-btn" onclick="lockApp()" title="Lock">Lock</button>
           </div>
         </div>
       </div>
-      <div class="progress-wrap"><div id="progress"></div></div>
+      <div class="progress-track" id="progressTrack" onclick="scrubTrack(event)">
+        <div id="progress"></div>
+      </div>
     </div>
 
     <div class="q-header">
       <span>Up Next</span>
-      <span>Queue (5)</span>
+      <span>Queue</span>
     </div>
     <div id="queue"></div>
   </div>
 
   <script>
-    // =========================================================================
-    // CONFIGURATION — EDIT THESE TWO VALUES
-    // =========================================================================
     const CONFIG = {
       SPOTIFY_CLIENT_ID: "88d726c655c9441c8731d2eeddc9c8cb",
-      PASSCODE: "snozzspot" // Quick passcode to unlock the screen
+      PASSCODE: "snozzspot"
     };
 
-    const REDIRECT_URI = window.location.origin + "/";
+    const REDIRECT_URI = window.location.origin + window.location.pathname;
     const SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state";
     let isPlaying = false;
+    let trackDuration = 0;
 
-    // Hide pop-out button if already sized around 400x300
     if (window.innerWidth <= 420 && window.innerHeight <= 340) {
       document.getElementById("popBtn").classList.add("hidden");
     }
 
-    // =========================================================================
-    // 1. PASSCODE GATE
-    // =========================================================================
     function unlockApp(e) {
       e.preventDefault();
-      const val = document.getElementById("pinInput").value;
-      if (val === CONFIG.PASSCODE) {
+      if (document.getElementById("pinInput").value === CONFIG.PASSCODE) {
         localStorage.setItem("deck_unlocked", "true");
         document.getElementById("lockScreen").classList.add("hidden");
         bootSpotify();
       } else {
-        document.getElementById("lockErr").textContent = "Wrong passcode";
+        document.getElementById("lockErr").textContent = "Incorrect passcode";
       }
     }
 
@@ -269,26 +270,21 @@
       location.reload();
     }
 
-    // =========================================================================
-    // 2. SPOTIFY OAUTH 2.0 PKCE (CLIENT-SIDE WITH AUTO-REFRESH)
-    // =========================================================================
     function randomString(len) {
       const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-      const values = crypto.getRandomValues(new Uint8Array(len));
-      return Array.from(values, x => chars[x % chars.length]).join("");
+      return Array.from(crypto.getRandomValues(new Uint8Array(len)), x => chars[x % chars.length]).join("");
     }
 
     async function sha256Base64Url(plain) {
       const data = new TextEncoder().encode(plain);
       const hash = await crypto.subtle.digest("SHA-256", data);
-      return btoa(String.fromCharCode(...new Uint8Array(hash)))
-        .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+      return btoa(String.fromCharCode(...new Uint8Array(hash))).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
     }
 
     async function startSpotifyAuth() {
       const verifier = randomString(64);
-      const challenge = await sha256Base64Url(verifier);
       localStorage.setItem("sp_verifier", verifier);
+      const challenge = await sha256Base64Url(verifier);
 
       const params = new URLSearchParams({
         client_id: CONFIG.SPOTIFY_CLIENT_ID,
@@ -316,7 +312,7 @@
       });
       const data = await res.json();
       if (data.access_token) saveTokens(data);
-      window.history.replaceState({}, document.title, "/");
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
 
     async function refreshTokenIfNeeded() {
@@ -348,9 +344,6 @@
       localStorage.setItem("sp_expires", String(Date.now() + (data.expires_in - 60) * 1000));
     }
 
-    // =========================================================================
-    // 3. SPOTIFY PLAYER & QUEUE POLLING
-    // =========================================================================
     async function spFetch(endpoint, method = "GET") {
       const token = await refreshTokenIfNeeded();
       if (!token) {
@@ -367,18 +360,16 @@
 
     async function syncDeck() {
       if (localStorage.getItem("deck_unlocked") !== "true") return;
-      const [player, qData] = await Promise.all([
-        spFetch(""),
-        spFetch("/queue")
-      ]);
+      const [player, qData] = await Promise.all([spFetch(""), spFetch("/queue")]);
 
       if (player && player.item) {
         isPlaying = player.is_playing;
+        trackDuration = player.item.duration_ms;
         document.getElementById("title").textContent = player.item.name;
         document.getElementById("artist").textContent = player.item.artists.map(a => a.name).join(", ");
         document.getElementById("cover").src = player.item.album.images[0]?.url || "";
-        document.getElementById("playBtn").textContent = isPlaying ? "⏸" : "▶";
-        const pct = Math.min(100, ((player.progress_ms || 0) / (player.item.duration_ms || 1)) * 100);
+        document.getElementById("playBtn").textContent = isPlaying ? "Pause" : "Play";
+        const pct = Math.min(100, ((player.progress_ms || 0) / trackDuration) * 100);
         document.getElementById("progress").style.width = `${pct}%`;
       }
 
@@ -406,13 +397,27 @@
       setTimeout(syncDeck, 350);
     }
 
+    async function scrubTrack(event) {
+      if (!trackDuration) return;
+      const rect = document.getElementById("progressTrack").getBoundingClientRect();
+      const clickX = event.clientX - rect.left;
+      const width = rect.width;
+      const percent = Math.max(0, Math.min(1, clickX / width));
+      const targetMs = Math.floor(trackDuration * percent);
+
+      const token = await refreshTokenIfNeeded();
+      if (!token) return;
+      await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${targetMs}`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setTimeout(syncDeck, 200);
+    }
+
     function popOut() {
       window.open(location.href, "SpotifyMiniDeck", "width=400,height=300,menubar=no,toolbar=no,location=no,status=no,resizable=no");
     }
 
-    // =========================================================================
-    // BOOTSTRAP
-    // =========================================================================
     async function bootSpotify() {
       const params = new URLSearchParams(window.location.search);
       if (params.has("code")) {
