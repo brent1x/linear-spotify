@@ -87,10 +87,10 @@
       flex-shrink: 0;
     }
     .meta { flex: 1; min-width: 0; }
-    .top-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; }
+    .top-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
     
-    #title { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 175px; }
-    #artist { font-size: 10px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; max-width: 175px; }
+    #title { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+    #artist { font-size: 10px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; max-width: 170px; }
 
     .badges {
       display: flex;
@@ -115,7 +115,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 115px;
+      max-width: 125px;
     }
     .pop-pill {
       font-size: 9px;
@@ -225,7 +225,7 @@
   <div class="shell">
     <div id="loginScreen" class="overlay hidden">
       <h2>Connect Spotify</h2>
-      <p>Authorize session to sync player control.</p>
+      <p>Authorize session to sync player & playlist names.</p>
       <button class="btn-primary" onclick="startSpotifyAuth()">Connect</button>
     </div>
 
@@ -242,7 +242,7 @@
               <div id="devicePill" class="badge" title="Active Device">Device</div>
               <button id="popBtn" class="pop-pill" onclick="popOut()" title="Pop out">↗</button>
             </div>
-            <div id="playlistPill" class="badge" title="Active Playlist">Spotify</div>
+            <div id="playlistPill" class="badge" title="Active Playlist / Context">Spotify</div>
           </div>
         </div>
         <div class="controls">
@@ -267,10 +267,11 @@
 
   <script>
     const CONFIG = {
-      SPOTIFY_CLIENT_ID: "88d726c655c9441c8731d2eeddc9c8cb"
+      SPOTIFY_CLIENT_ID: "88d726c655c9441c8731d2eeddc9c8cb",
+      // Bumping AUTH_VERSION forces a one-time re-login so your token gets playlist-read permissions
+      AUTH_VERSION: "3"
     };
 
-    // Embedded Spotify Logo SVG Data URI for idle state
     const SPOTIFY_LOGO_SVG = "data:image/svg+xml;utf8," + encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="52" height="52">
         <rect width="64" height="64" rx="6" fill="#1c1c24"/>
@@ -279,7 +280,21 @@
     `);
 
     const REDIRECT_URI = window.location.origin + window.location.pathname;
-    const SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative";
+    const SCOPES = [
+      "user-read-currently-playing",
+      "user-read-playback-state",
+      "user-modify-playback-state",
+      "playlist-read-private",
+      "playlist-read-collaborative"
+    ].join(" ");
+
+    // Clear stale token if it was created before playlist scopes were added
+    if (localStorage.getItem("sp_auth_version") !== CONFIG.AUTH_VERSION) {
+      localStorage.removeItem("sp_token");
+      localStorage.removeItem("sp_refresh");
+      localStorage.removeItem("sp_expires");
+      localStorage.setItem("sp_auth_version", CONFIG.AUTH_VERSION);
+    }
 
     let isPlaying = false;
     let trackDuration = 0;
@@ -288,12 +303,25 @@
     let cachedQueue = JSON.parse(localStorage.getItem("sp_cached_queue") || "null");
     let lastDeviceId = localStorage.getItem("sp_last_device_id") || null;
     let lastDeviceName = localStorage.getItem("sp_last_device_name") || "Device";
-    const playlistNameCache = {};
+    let lastContextUri = localStorage.getItem("sp_last_context_uri") || null;
+    let lastPlaylistLabel = localStorage.getItem("sp_last_playlist_label") || "";
+    const playlistNameCache = JSON.parse(localStorage.getItem("sp_playlist_map") || "{}");
 
     document.getElementById("cover").src = SPOTIFY_LOGO_SVG;
+    if (lastPlaylistLabel) {
+      document.getElementById("playlistPill").textContent = lastPlaylistLabel;
+    }
 
     if (window.innerWidth <= 420 && window.innerHeight <= 340) {
       document.getElementById("popBtn").classList.add("hidden");
+    }
+
+    function setPlaylistPill(name) {
+      if (!name) return;
+      lastPlaylistLabel = name;
+      localStorage.setItem("sp_last_playlist_label", name);
+      document.getElementById("playlistPill").textContent = name;
+      document.getElementById("playlistPill").title = name;
     }
 
     function formatTime(ms) {
@@ -379,34 +407,72 @@
       localStorage.setItem("sp_token", data.access_token);
       if (data.refresh_token) localStorage.setItem("sp_refresh", data.refresh_token);
       localStorage.setItem("sp_expires", String(Date.now() + (data.expires_in - 60) * 1000));
+      localStorage.setItem("sp_auth_version", CONFIG.AUTH_VERSION);
     }
 
-    async function spFetch(endpoint, method = "GET", bodyObj = null) {
+    async function spFetch(endpoint, method = "GET") {
       const token = await refreshTokenIfNeeded();
       if (!token) {
         document.getElementById("loginScreen").classList.remove("hidden");
         return null;
       }
-      const opts = {
+      const res = await fetch(`https://api.spotify.com/v1/me/player${endpoint}`, {
         method,
         headers: { Authorization: `Bearer ${token}` }
-      };
-      if (bodyObj) {
-        opts.headers["Content-Type"] = "application/json";
-        opts.body = JSON.stringify(bodyObj);
-      }
-      const res = await fetch(`https://api.spotify.com/v1/me/player${endpoint}`, opts);
+      });
       if (res.status === 204 || res.status === 202) return null;
       return res.ok ? res.json() : null;
     }
 
-    async function resolvePlaylistName(playlistId, fallbackAlbum) {
+    // Layer 1: Pre-index the user's saved & personal playlists on boot
+    async function preloadUserPlaylists() {
+      const token = await refreshTokenIfNeeded();
+      if (!token) return;
+      try {
+        const res = await fetch("https://api.spotify.com/v1/me/playlists?limit=50", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          (data.items || []).forEach(pl => {
+            if (pl && pl.id && pl.name) {
+              playlistNameCache[pl.id] = pl.name;
+            }
+          });
+          localStorage.setItem("sp_playlist_map", JSON.stringify(playlistNameCache));
+        }
+      } catch (e) {}
+    }
+
+    // Layers 2 & 3: Direct API + oEmbed fallback for algorithmic/Made-For-You playlists
+    async function resolvePlaylistName(playlistId, contextHref, fallbackAlbum) {
       if (playlistNameCache[playlistId]) {
-        document.getElementById("playlistPill").textContent = playlistNameCache[playlistId];
+        setPlaylistPill(playlistNameCache[playlistId]);
         return;
       }
 
-      // 1. Try Spotify public oEmbed endpoint first (works for Daily Mix, Daylist, Release Radar, and Spotify-owned playlists)
+      const token = await refreshTokenIfNeeded();
+
+      // Layer 2: Direct Spotify Web API lookup (now works with playlist-read-private scope)
+      if (token) {
+        try {
+          const apiUrl = contextHref || `https://api.spotify.com/v1/playlists/${playlistId}`;
+          const res = await fetch(`${apiUrl}?fields=name`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.name) {
+              playlistNameCache[playlistId] = data.name;
+              localStorage.setItem("sp_playlist_map", JSON.stringify(playlistNameCache));
+              setPlaylistPill(data.name);
+              return;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Layer 3: Public oEmbed lookup (resolves Daylist, Daily Mix, Release Radar, DJ, etc.)
       try {
         const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(`https://open.spotify.com/playlist/${playlistId}`)}`;
         const oRes = await fetch(oembedUrl);
@@ -414,32 +480,17 @@
           const oData = await oRes.json();
           if (oData && oData.title) {
             playlistNameCache[playlistId] = oData.title;
-            document.getElementById("playlistPill").textContent = oData.title;
+            localStorage.setItem("sp_playlist_map", JSON.stringify(playlistNameCache));
+            setPlaylistPill(oData.title);
             return;
           }
         }
       } catch (e) {}
 
-      // 2. Fallback to standard Web API endpoint for private/personal playlists
-      const token = await refreshTokenIfNeeded();
-      if (token) {
-        try {
-          const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}?fields=name`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data && data.name) {
-              playlistNameCache[playlistId] = data.name;
-              document.getElementById("playlistPill").textContent = data.name;
-              return;
-            }
-          }
-        } catch (e) {}
+      // Layer 4: Keep previous known playlist name or show current album
+      if (!lastPlaylistLabel && fallbackAlbum) {
+        setPlaylistPill(fallbackAlbum);
       }
-
-      // 3. Final fallback so it never displays "—"
-      document.getElementById("playlistPill").textContent = fallbackAlbum || "Playlist";
     }
 
     async function syncDeck() {
@@ -456,16 +507,18 @@
             localStorage.setItem("sp_last_device_name", lastDeviceName);
           }
         }
+        if (player.context && player.context.uri) {
+          lastContextUri = player.context.uri;
+          localStorage.setItem("sp_last_context_uri", lastContextUri);
+        }
         if (player.item) {
           lastTrackData = player;
           localStorage.setItem("sp_last_track", JSON.stringify(player));
         }
       } else if (lastTrackData) {
-        // Player returned 204 (idle/extended pause): mark cached state as paused
         lastTrackData.is_playing = false;
       }
 
-      // Only overwrite cachedQueue if Spotify returns a non-empty queue array
       if (qData && Array.isArray(qData.queue) && qData.queue.length > 0) {
         cachedQueue = qData.queue;
         localStorage.setItem("sp_cached_queue", JSON.stringify(cachedQueue));
@@ -490,25 +543,25 @@
         document.getElementById("timeDisplay").textContent = `${formatTime(currentProgress)} / ${formatTime(trackDuration)}`;
 
         const albumName = activePlayer.item.album?.name || "Spotify";
+        const activeContextUri = activePlayer.context?.uri || lastContextUri;
+        const activeContextHref = activePlayer.context?.href || null;
 
-        if (activePlayer.context && activePlayer.context.uri) {
-          const uri = activePlayer.context.uri;
-          const uriParts = uri.split(":");
-          const lastPart = uriParts[uriParts.length - 1];
-
-          if (uri.includes(":playlist:") && lastPart) {
-            resolvePlaylistName(lastPart, albumName);
-          } else if (uri.includes(":album:")) {
-            document.getElementById("playlistPill").textContent = albumName;
-          } else if (uri.includes(":collection")) {
-            document.getElementById("playlistPill").textContent = "Liked Songs";
-          } else if (uri.includes(":artist:")) {
-            document.getElementById("playlistPill").textContent = `${activePlayer.item.artists[0]?.name || "Artist"} Mix`;
-          } else {
-            document.getElementById("playlistPill").textContent = albumName;
+        if (activeContextUri) {
+          // Regex handles both spotify:playlist:ID and legacy spotify:user:xxx:playlist:ID
+          const plMatch = activeContextUri.match(/playlist[:\/]([a-zA-Z0-9]+)/);
+          if (plMatch && plMatch[1]) {
+            resolvePlaylistName(plMatch[1], activeContextHref, albumName);
+          } else if (activeContextUri.includes(":collection")) {
+            setPlaylistPill("Liked Songs");
+          } else if (activeContextUri.includes(":album:")) {
+            setPlaylistPill(albumName);
+          } else if (activeContextUri.includes(":artist:")) {
+            setPlaylistPill(`${activePlayer.item.artists[0]?.name || "Artist"} Radio`);
+          } else if (!lastPlaylistLabel) {
+            setPlaylistPill(albumName);
           }
-        } else {
-          document.getElementById("playlistPill").textContent = albumName;
+        } else if (!lastPlaylistLabel) {
+          setPlaylistPill(albumName);
         }
       } else {
         document.getElementById("cover").src = SPOTIFY_LOGO_SVG;
@@ -564,13 +617,11 @@
         return;
       }
 
-      // Attempting to unpause / play
       let res = await fetch("https://api.spotify.com/v1/me/player/play", {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      // If device went to sleep during extended pause (404 / 403), wake it and restore track + queue state
       if (!res.ok && lastTrackData && lastTrackData.item) {
         const devId = await getTargetDeviceId(token);
         const query = devId ? `?device_id=${devId}` : "";
@@ -602,7 +653,6 @@
         method: "POST",
         headers: { Authorization: `Bearer ${token}` }
       });
-      // If idle, play the first song in the cached queue directly
       if (!res.ok && cachedQueue && cachedQueue.length > 0) {
         await playQueueTrack(cachedQueue[0].uri);
         return;
@@ -616,7 +666,26 @@
       const devId = await getTargetDeviceId(token);
       const query = devId ? `?device_id=${devId}` : "";
 
-      // Build queue continuation starting from the clicked track
+      // Try jumping inside the active playlist context first so Spotify doesn't wipe player.context
+      if (lastContextUri && (lastContextUri.includes(":playlist:") || lastContextUri.includes(":album:"))) {
+        const ctxRes = await fetch(`https://api.spotify.com/v1/me/player/play${query}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            context_uri: lastContextUri,
+            offset: { uri: trackUri }
+          })
+        });
+        if (ctxRes.ok) {
+          setTimeout(syncDeck, 400);
+          return;
+        }
+      }
+
+      // Fallback if track was manually queued outside the playlist
       let urisToPlay = [trackUri];
       if (cachedQueue && cachedQueue.length > 0) {
         const idx = cachedQueue.findIndex(t => t.uri === trackUri);
@@ -661,7 +730,6 @@
       setTimeout(syncDeck, 250);
     }
 
-    // Periodic keep-alive ping while paused so the active Spotify device stays registered
     async function keepSessionAlive() {
       if (isPlaying || !lastDeviceId) return;
       const token = await refreshTokenIfNeeded();
@@ -679,7 +747,9 @@
     }
 
     function popOut() {
-      window.open(location.href, "SpotifyMiniDeck", "width=400,height=300,menubar=no,toolbar=no,location=no,status=no,resizable=no");
+      // Cache-busting query string ensures the popup window loads the latest deployment
+      const bustUrl = `${window.location.origin}${window.location.pathname}?v=${Date.now()}`;
+      window.open(bustUrl, "SpotifyMiniDeck", "width=400,height=300,menubar=no,toolbar=no,location=no,status=no,resizable=no");
     }
 
     async function bootSpotify() {
@@ -692,6 +762,7 @@
         document.getElementById("loginScreen").classList.remove("hidden");
       } else {
         document.getElementById("loginScreen").classList.add("hidden");
+        await preloadUserPlaylists();
         syncDeck();
         setInterval(syncDeck, 3000);
         setInterval(keepSessionAlive, 45000);
