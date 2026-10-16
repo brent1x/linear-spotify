@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini Deck</title>
+  <style>
+    :root {
+      --bg: #0b0b0e;
+      --card: #15151b;
+      --row: #121217;
+      --border: #24242e;
+      --text: #f3f3f7;
+      --sub: #8a8a9b;
+      --accent: #1db954;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; user-select: none; }
+    body {
+      background: #050507;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    /* Locks footprint to 400x300 max */
+    .shell {
+      width: 100vw;
+      height: 100vh;
+      max-width: 400px;
+      max-height: 300px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+    }
+
+    /* Overlay Screens (Passcode & Connect) */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: var(--bg);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 20px;
+      text-align: center;
+    }
+    .hidden { display: none !important; }
+    .overlay h2 { font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
+    .overlay p { font-size: 11px; color: var(--sub); }
+    .pin-input {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      text-align: center;
+      width: 160px;
+      outline: none;
+    }
+    .pin-input:focus { border-color: var(--accent); }
+    .btn-primary {
+      background: var(--accent);
+      color: #000;
+      font-weight: 700;
+      font-size: 12px;
+      padding: 7px 16px;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+    }
+
+    /* Player Header */
+    .now-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      position: relative;
+      overflow: hidden;
+    }
+    #cover {
+      width: 56px;
+      height: 56px;
+      border-radius: 6px;
+      background: #22222b;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .meta { flex: 1; min-width: 0; }
+    .top-row { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+    #title { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #artist { font-size: 11px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+
+    .controls { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .ctrl-btn {
+      background: #23232e;
+      color: var(--text);
+      border: none;
+      border-radius: 6px;
+      height: 24px;
+      padding: 0 9px;
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+    .ctrl-btn:hover { background: var(--accent); color: #000; }
+    .util-btn {
+      background: transparent;
+      color: var(--sub);
+      border: 1px solid var(--border);
+      padding: 0 6px;
+      height: 22px;
+      font-size: 10px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .util-btn:hover { color: var(--text); border-color: var(--sub); }
+
+    /* Progress Bar */
+    .progress-wrap {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: #23232e;
+    }
+    #progress {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width 0.4s linear;
+    }
+
+    /* Queue Section */
+    .q-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--sub);
+      padding: 0 2px;
+    }
+    #queue {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 3px;
+    }
+    .q-item {
+      background: var(--row);
+      border: 1px solid #1b1b23;
+      border-radius: 5px;
+      padding: 4px 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      height: 28px;
+    }
+    .q-left { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; padding-right: 8px; }
+    .q-num { color: var(--sub); font-size: 10px; width: 12px; }
+    .q-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .q-artist { color: var(--sub); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 115px; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+
+  <div class="shell">
+    <!-- 1. PASSCODE LOCK SCREEN -->
+    <div id="lockScreen" class="overlay">
+      <h2>🔒 Mini Deck Locked</h2>
+      <form onsubmit="unlockApp(event)" style="display:flex; gap:6px;">
+        <input id="pinInput" type="password" class="pin-input" placeholder="Passcode" autofocus />
+        <button type="submit" class="btn-primary">Go</button>
+      </form>
+      <p id="lockErr" style="color:#ff5555;"></p>
+    </div>
+
+    <!-- 2. SPOTIFY LOGIN SCREEN -->
+    <div id="loginScreen" class="overlay hidden">
+      <h2>Connect Spotify</h2>
+      <p>Authorize your browser to view & control playback.</p>
+      <button class="btn-primary" onclick="startSpotifyAuth()">Connect Account</button>
+    </div>
+
+    <!-- 3. MAIN 400x300 DECK -->
+    <div class="now-card">
+      <img id="cover" src="" alt="" />
+      <div class="meta">
+        <div class="top-row">
+          <div id="title">Nothing Playing</div>
+        </div>
+        <div id="artist">Open Spotify & play a track</div>
+        <div class="controls">
+          <button class="ctrl-btn" onclick="command('POST', 'previous')" title="Previous">⏮</button>
+          <button id="playBtn" class="ctrl-btn" onclick="togglePlay()" title="Play/Pause">▶</button>
+          <button class="ctrl-btn" onclick="command('POST', 'next')" title="Next">⏭</button>
+          <div style="margin-left:auto; display:flex; gap:4px;">
+            <button id="popBtn" class="util-btn" onclick="popOut()" title="Pop out 400x300 window">↗</button>
+            <button class="util-btn" onclick="lockApp()" title="Lock & Disconnect">🔒</button>
+          </div>
+        </div>
+      </div>
+      <div class="progress-wrap"><div id="progress"></div></div>
+    </div>
+
+    <div class="q-header">
+      <span>Up Next</span>
+      <span>Queue (5)</span>
+    </div>
+    <div id="queue"></div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // CONFIGURATION — EDIT THESE TWO VALUES
+    // =========================================================================
+    const CONFIG = {
+      SPOTIFY_CLIENT_ID: "88d726c655c9441c8731d2eeddc9c8cb",
+      PASSCODE: "snozzspot" // Quick passcode to unlock the screen
+    };
+
+    const REDIRECT_URI = window.location.origin + "/";
+    const SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state";
+    let isPlaying = false;
+
+    // Hide pop-out button if already sized around 400x300
+    if (window.innerWidth <= 420 && window.innerHeight <= 340) {
+      document.getElementById("popBtn").classList.add("hidden");
+    }
+
+    // =========================================================================
+    // 1. PASSCODE GATE
+    // =========================================================================
+    function unlockApp(e) {
+      e.preventDefault();
+      const val = document.getElementById("pinInput").value;
+      if (val === CONFIG.PASSCODE) {
+        localStorage.setItem("deck_unlocked", "true");
+        document.getElementById("lockScreen").classList.add("hidden");
+        bootSpotify();
+      } else {
+        document.getElementById("lockErr").textContent = "Wrong passcode";
+      }
+    }
+
+    function lockApp() {
+      localStorage.clear();
+      location.reload();
+    }
+
+    // =========================================================================
+    // 2. SPOTIFY OAUTH 2.0 PKCE (CLIENT-SIDE WITH AUTO-REFRESH)
+    // =========================================================================
+    function randomString(len) {
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      const values = crypto.getRandomValues(new Uint8Array(len));
+      return Array.from(values, x => chars[x % chars.length]).join("");
+    }
+
+    async function sha256Base64Url(plain) {
+      const data = new TextEncoder().encode(plain);
+      const hash = await crypto.subtle.digest("SHA-256", data);
+      return btoa(String.fromCharCode(...new Uint8Array(hash)))
+        .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+    }
+
+    async function startSpotifyAuth() {
+      const verifier = randomString(64);
+      const challenge = await sha256Base64Url(verifier);
+      localStorage.setItem("sp_verifier", verifier);
+
+      const params = new URLSearchParams({
+        client_id: CONFIG.SPOTIFY_CLIENT_ID,
+        response_type: "code",
+        redirect_uri: REDIRECT_URI,
+        scope: SCOPES,
+        code_challenge_method: "S256",
+        code_challenge: challenge
+      });
+      window.location.href = `https://accounts.spotify.com/authorize?${params.toString()}`;
+    }
+
+    async function exchangeCode(code) {
+      const verifier = localStorage.getItem("sp_verifier");
+      const res = await fetch("https://accounts.spotify.com/api/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: CONFIG.SPOTIFY_CLIENT_ID,
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: REDIRECT_URI,
+          code_verifier: verifier
+        })
+      });
+      const data = await res.json();
+      if (data.access_token) saveTokens(data);
+      window.history.replaceState({}, document.title, "/");
+    }
+
+    async function refreshTokenIfNeeded() {
+      const expiresAt = Number(localStorage.getItem("sp_expires") || 0);
+      const refresh = localStorage.getItem("sp_refresh");
+      if (Date.now() < expiresAt) return localStorage.getItem("sp_token");
+      if (!refresh) return null;
+
+      const res = await fetch("https://accounts.spotify.com/api/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: CONFIG.SPOTIFY_CLIENT_ID,
+          grant_type: "refresh_token",
+          refresh_token: refresh
+        })
+      });
+      const data = await res.json();
+      if (data.access_token) {
+        saveTokens(data);
+        return data.access_token;
+      }
+      return null;
+    }
+
+    function saveTokens(data) {
+      localStorage.setItem("sp_token", data.access_token);
+      if (data.refresh_token) localStorage.setItem("sp_refresh", data.refresh_token);
+      localStorage.setItem("sp_expires", String(Date.now() + (data.expires_in - 60) * 1000));
+    }
+
+    // =========================================================================
+    // 3. SPOTIFY PLAYER & QUEUE POLLING
+    // =========================================================================
+    async function spFetch(endpoint, method = "GET") {
+      const token = await refreshTokenIfNeeded();
+      if (!token) {
+        document.getElementById("loginScreen").classList.remove("hidden");
+        return null;
+      }
+      const res = await fetch(`https://api.spotify.com/v1/me/player${endpoint}`, {
+        method,
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 204 || res.status === 202) return null;
+      return res.ok ? res.json() : null;
+    }
+
+    async function syncDeck() {
+      if (localStorage.getItem("deck_unlocked") !== "true") return;
+      const [player, qData] = await Promise.all([
+        spFetch(""),
+        spFetch("/queue")
+      ]);
+
+      if (player && player.item) {
+        isPlaying = player.is_playing;
+        document.getElementById("title").textContent = player.item.name;
+        document.getElementById("artist").textContent = player.item.artists.map(a => a.name).join(", ");
+        document.getElementById("cover").src = player.item.album.images[0]?.url || "";
+        document.getElementById("playBtn").textContent = isPlaying ? "⏸" : "▶";
+        const pct = Math.min(100, ((player.progress_ms || 0) / (player.item.duration_ms || 1)) * 100);
+        document.getElementById("progress").style.width = `${pct}%`;
+      }
+
+      if (qData && qData.queue) {
+        const next5 = qData.queue.slice(0, 5);
+        document.getElementById("queue").innerHTML = next5.map((t, i) => `
+          <div class="q-item">
+            <div class="q-left">
+              <span class="q-num">${i + 1}</span>
+              <span class="q-name">${t.name}</span>
+            </div>
+            <span class="q-artist">${t.artists[0]?.name || ""}</span>
+          </div>
+        `).join("");
+      }
+    }
+
+    async function togglePlay() {
+      await spFetch(isPlaying ? "/pause" : "/play", "PUT");
+      setTimeout(syncDeck, 300);
+    }
+
+    async function command(method, action) {
+      await spFetch(`/${action}`, method);
+      setTimeout(syncDeck, 350);
+    }
+
+    function popOut() {
+      window.open(location.href, "SpotifyMiniDeck", "width=400,height=300,menubar=no,toolbar=no,location=no,status=no,resizable=no");
+    }
+
+    // =========================================================================
+    // BOOTSTRAP
+    // =========================================================================
+    async function bootSpotify() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("code")) {
+        await exchangeCode(params.get("code"));
+      }
+      const token = await refreshTokenIfNeeded();
+      if (!token) {
+        document.getElementById("loginScreen").classList.remove("hidden");
+      } else {
+        document.getElementById("loginScreen").classList.add("hidden");
+        syncDeck();
+        setInterval(syncDeck, 3000);
+      }
+    }
+
+    if (localStorage.getItem("deck_unlocked") === "true") {
+      document.getElementById("lockScreen").classList.add("hidden");
+      bootSpotify();
+    }
+  </script>
+</body>
+</html>
