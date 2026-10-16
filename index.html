@@ -163,7 +163,10 @@
       align-items: center;
       font-size: 11px;
       height: 27px;
+      cursor: pointer;
+      transition: background 0.1s ease;
     }
+    .q-item:hover { background: #1a1a24; border-color: var(--border-hover); }
     .q-left { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; padding-right: 8px; }
     .q-num { color: var(--sub); font-size: 9px; width: 10px; }
     .q-name { font-weight: 400; color: #dedee2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -189,9 +192,9 @@
         </div>
         <div id="artist">Waiting for playback</div>
         <div class="controls">
-          <button class="ctrl-btn" onclick="command('POST', 'previous')" title="Previous">Prev</button>
+          <button id="muteBtn" class="ctrl-btn" onclick="toggleMute()" title="Mute/Unmute">Mute</button>
           <button id="playBtn" class="ctrl-btn" onclick="togglePlay()" title="Play/Pause">Play</button>
-          <button class="ctrl-btn" onclick="command('POST', 'next')" title="Next">Next</button>
+          <button class="ctrl-btn" onclick="skipTrack()" title="Next">Next</button>
           <div style="margin-left:auto; display:flex; gap:2px;">
             <button id="popBtn" class="util-btn" onclick="popOut()" title="Pop out">↗</button>
             <button class="util-btn" onclick="logoutSpotify()" title="Disconnect">Logout</button>
@@ -204,7 +207,7 @@
     </div>
 
     <div class="q-header">
-      <span>Up Next</span>
+      <span>Up Next (Click to Play)</span>
       <span>Queue</span>
     </div>
     <div id="queue"></div>
@@ -219,6 +222,8 @@
     const SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state";
     let isPlaying = false;
     let trackDuration = 0;
+    let previousVolume = 50;
+    let isMuted = false;
 
     if (window.innerWidth <= 420 && window.innerHeight <= 340) {
       document.getElementById("popBtn").classList.add("hidden");
@@ -320,21 +325,26 @@
     async function syncDeck() {
       const [player, qData] = await Promise.all([spFetch(""), spFetch("/queue")]);
 
-      if (player && player.item) {
-        isPlaying = player.is_playing;
-        trackDuration = player.item.duration_ms;
-        document.getElementById("title").textContent = player.item.name;
-        document.getElementById("artist").textContent = player.item.artists.map(a => a.name).join(", ");
-        document.getElementById("cover").src = player.item.album.images[0]?.url || "";
-        document.getElementById("playBtn").textContent = isPlaying ? "Pause" : "Play";
-        const pct = Math.min(100, ((player.progress_ms || 0) / trackDuration) * 100);
-        document.getElementById("progress").style.width = `${pct}%`;
+      if (player) {
+        if (player.device && player.device.volume_percent !== undefined && !isMuted) {
+          previousVolume = player.device.volume_percent;
+        }
+        if (player.item) {
+          isPlaying = player.is_playing;
+          trackDuration = player.item.duration_ms;
+          document.getElementById("title").textContent = player.item.name;
+          document.getElementById("artist").textContent = player.item.artists.map(a => a.name).join(", ");
+          document.getElementById("cover").src = player.item.album.images[0]?.url || "";
+          document.getElementById("playBtn").textContent = isPlaying ? "Pause" : "Play";
+          const pct = Math.min(100, ((player.progress_ms || 0) / trackDuration) * 100);
+          document.getElementById("progress").style.width = `${pct}%`;
+        }
       }
 
       if (qData && qData.queue) {
         const next5 = qData.queue.slice(0, 5);
         document.getElementById("queue").innerHTML = next5.map((t, i) => `
-          <div class="q-item">
+          <div class="q-item" onclick="playQueueTrack('${t.uri}')" title="Click to play">
             <div class="q-left">
               <span class="q-num">${i + 1}</span>
               <span class="q-name">${t.name}</span>
@@ -350,9 +360,50 @@
       setTimeout(syncDeck, 300);
     }
 
-    async function command(method, action) {
-      await spFetch(`/${action}`, method);
-      setTimeout(syncDeck, 350);
+    async function skipTrack() {
+      const token = await refreshTokenIfNeeded();
+      if (!token) return;
+      await fetch("https://api.spotify.com/v1/me/player/next", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setTimeout(syncDeck, 400);
+    }
+
+    async function toggleMute() {
+      const token = await refreshTokenIfNeeded();
+      if (!token) return;
+      
+      let targetVol = 0;
+      if (isMuted) {
+        targetVol = previousVolume > 0 ? previousVolume : 50;
+        isMuted = false;
+        document.getElementById("muteBtn").textContent = "Mute";
+      } else {
+        isMuted = true;
+        document.getElementById("muteBtn").textContent = "Unmute";
+      }
+
+      await fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${targetVol}`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setTimeout(syncDeck, 300);
+    }
+
+    async function playQueueTrack(trackUri) {
+      const token = await refreshTokenIfNeeded();
+      if (!token) return;
+      // Start playback directly at the selected track URI
+      await fetch("https://api.spotify.com/v1/me/player/play", {
+        method: "PUT",
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ uris: [trackUri] })
+      });
+      setTimeout(syncDeck, 400);
     }
 
     async function scrubTrack(event) {
