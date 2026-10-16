@@ -232,8 +232,8 @@
   <script>
     const CONFIG = {
       SPOTIFY_CLIENT_ID: "88d726c655c9441c8731d2eeddc9c8cb",
-      // Pre-hashed SHA-256 for "snozzspot" (plaintext is completely hidden)
-      PASSCODE_HASH: "0495f59040854cb6c5c7d2426dfc56db322cb2ae8e7a0494480efce263be6b2e"
+      // SHA-256 hash for "snozzify"
+      PASSCODE_HASH: "b826f4325a74e1d9047b0bbdbcb80503f1912a201217e9f34fbf1fa000ea35cf"
     };
 
     const REDIRECT_URI = window.location.origin + window.location.pathname;
@@ -253,7 +253,6 @@
 
     async function unlockApp(e) {
       e.preventDefault();
-      // Added .trim() and .toLowerCase() to prevent spacing/capitalization errors
       const val = document.getElementById("pinInput").value.trim().toLowerCase();
       const hashedInput = await hashString(val);
       if (hashedInput === CONFIG.PASSCODE_HASH) {
@@ -415,7 +414,7 @@
     }
 
     function popOut() {
-      window.open(location.href, "SpotifyMiniDeck", "width=400,height=300,menubar=no,toolbar=no,location=no,status=no,resizable=no");
+      window.open(location.hrf, "SpotifyMiniDeck", "width=400,height=300,menubar=no,toolbar=no,location=no,status=no,resizable=no");
     }
 
     async function bootSpotify() {
