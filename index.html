@@ -86,11 +86,20 @@
       flex-shrink: 0;
     }
     .meta { flex: 1; min-width: 0; }
-    .top-row { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
-    #title { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+    .top-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; }
     
-    /* Device / Top Pill Badge */
-    #devicePill {
+    #title { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+    #artist { font-size: 10px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+
+    /* Right-side badges container */
+    .badges {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 3px;
+      flex-shrink: 0;
+    }
+    .badge {
       font-size: 9px;
       font-weight: 500;
       background: #1a1a22;
@@ -101,19 +110,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 120px;
-    }
-
-    #artist { font-size: 10px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
-    
-    /* Playlist Field */
-    #playlistField {
-      font-size: 9px;
-      color: var(--sub);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      margin-top: 2px;
+      max-width: 115px;
     }
 
     .controls { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
@@ -215,11 +212,15 @@
       <img id="cover" src="" alt="" />
       <div class="meta">
         <div class="top-row">
-          <div id="title">Idle</div>
-          <div id="devicePill" title="Active Device">Device</div>
+          <div>
+            <div id="title">Idle</div>
+            <div id="artist">Waiting for playback</div>
+          </div>
+          <div class="badges">
+            <div id="devicePill" class="badge" title="Active Device">Device</div>
+            <div id="playlistPill" class="badge" title="Active Playlist">Playlist: —</div>
+          </div>
         </div>
-        <div id="artist">Waiting for playback</div>
-        <div id="playlistField">Playlist: —</div>
         <div class="controls">
           <button id="playBtn" class="ctrl-btn" onclick="togglePlay()" title="Play/Pause">Play</button>
           <button class="ctrl-btn" onclick="skipTrack()" title="Next">Next</button>
@@ -250,6 +251,7 @@
     let isPlaying = false;
     let trackDuration = 0;
     let lastTrackData = null;
+    let cachedPlaylistName = "";
 
     if (window.innerWidth <= 420 && window.innerHeight <= 340) {
       document.getElementById("popBtn").classList.add("hidden");
@@ -347,12 +349,10 @@
       const [player, qData] = await Promise.all([spFetch(""), spFetch("/queue")]);
 
       if (player) {
-        // Update Device Pill
         if (player.device && player.device.name) {
           document.getElementById("devicePill").textContent = player.device.name;
         }
 
-        // Cache item if playing or paused to maintain state
         if (player.item) {
           lastTrackData = player;
         }
@@ -370,18 +370,21 @@
           const pct = Math.min(100, ((activePlayer.progress_ms || 0) / trackDuration) * 100);
           document.getElementById("progress").style.width = `${pct}%`;
 
-          // Parse Playlist / Context info
-          if (activePlayer.context && activePlayer.context.type) {
-            let contextType = activePlayer.context.type;
-            if (contextType === "playlist" && activePlayer.context.uri) {
-              const playlistId = activePlayer.context.uri.split(":").pop();
-              fetchPlaylistName(playlistId);
+          // Parse Context/Playlist correctly
+          if (activePlayer.context && activePlayer.context.uri) {
+            const uriParts = activePlayer.context.uri.split(":");
+            const contextType = uriParts[1]; // e.g., 'playlist', 'album', 'artist'
+            const contextId = uriParts[2];
+
+            if (contextType === "playlist" && contextId) {
+              fetchPlaylistName(contextId);
+            } else if (contextType === "album" && activePlayer.item.album) {
+              document.getElementById("playlistPill").textContent = `Album: ${activePlayer.item.album.name}`;
             } else {
-              let capitalized = contextType.charAt(0).toUpperCase() + contextType.slice(1);
-              document.getElementById("playlistField").textContent = `Playlist: ${capitalized}`;
+              document.getElementById("playlistPill").textContent = `Context: ${contextType}`;
             }
           } else {
-            document.getElementById("playlistField").textContent = "Playlist: —";
+            document.getElementById("playlistPill").textContent = "Playlist: —";
           }
         }
       }
@@ -410,7 +413,7 @@
         if (res.ok) {
           const data = await res.json();
           if (data.name) {
-            document.getElementById("playlistField").textContent = `Playlist: ${data.name}`;
+            document.getElementById("playlistPill").textContent = `${data.name}`;
           }
         }
       } catch (e) {
