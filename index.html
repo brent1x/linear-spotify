@@ -37,6 +37,13 @@
       flex-direction: column;
       gap: 8px;
       position: relative;
+      transform-origin: center center;
+      transition: transform 0.15s ease;
+    }
+    .shell.scale-2x {
+      width: 400px;
+      height: 300px;
+      transform: scale(2);
     }
     .overlay {
       position: absolute;
@@ -130,7 +137,7 @@
       align-items: center;
       justify-content: center;
     }
-    .pop-pill:hover { color: var(--text); border-color: var(--border-hover); }
+    .pop-pill:hover, .pop-pill.active { color: var(--text); border-color: var(--border-hover); }
 
     .controls { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
     .ctrl-btn {
@@ -154,18 +161,18 @@
       bottom: 0;
       left: 0;
       right: 0;
-      height: 14px;
-      display: flex;
-      align-items: center;
+      height: 20px;
+      pointer-events: none;
     }
     .progress-track {
       position: absolute;
       bottom: 0;
       left: 0;
-      right: 76px;
+      right: 0;
       height: 4px;
       background: #1a1a22;
       cursor: pointer;
+      pointer-events: auto;
     }
     .progress-track:hover { height: 6px; }
     #progress {
@@ -177,11 +184,13 @@
     }
     #timeDisplay {
       position: absolute;
-      right: 6px;
-      bottom: 2px;
+      right: 8px;
+      bottom: 7px;
       font-size: 9px;
+      line-height: 1;
       color: var(--sub);
       font-variant-numeric: tabular-nums;
+      text-align: right;
     }
 
     .q-header {
@@ -223,7 +232,7 @@
 </head>
 <body>
 
-  <div class="shell">
+  <div class="shell" id="appShell">
     <div id="loginScreen" class="overlay hidden">
       <h2>Connect Spotify</h2>
       <p>Authorize session to sync player & playlist names.</p>
@@ -242,6 +251,7 @@
             <div class="top-pill-row">
               <div id="devicePill" class="badge" title="Active Device">Device</div>
               <button id="popBtn" class="pop-pill" onclick="popOut()" title="Pop out">↗</button>
+              <button id="scaleBtn" class="pop-pill" onclick="toggleScale()" title="Toggle 200% size">2x</button>
             </div>
             <div id="playlistPill" class="badge" title="Active Playlist / Context">Spotify</div>
           </div>
@@ -252,10 +262,10 @@
         </div>
       </div>
       <div class="progress-container">
+        <div id="timeDisplay">0:00 / 0:00</div>
         <div class="progress-track" id="progressTrack" onclick="scrubTrack(event)">
           <div id="progress"></div>
         </div>
-        <div id="timeDisplay">0:00 / 0:00</div>
       </div>
     </div>
 
@@ -298,6 +308,7 @@
     }
 
     let isPlaying = false;
+    let isScaled2x = false;
     let trackDuration = 0;
     let currentProgress = 0;
     let lastTrackData = JSON.parse(localStorage.getItem("sp_last_track") || "null");
@@ -315,6 +326,25 @@
 
     if (window.innerWidth <= 420 && window.innerHeight <= 340) {
       document.getElementById("popBtn").classList.add("hidden");
+    }
+
+    function toggleScale() {
+      isScaled2x = !isScaled2x;
+      const shell = document.getElementById("appShell");
+      const scaleBtn = document.getElementById("scaleBtn");
+      shell.classList.toggle("scale-2x", isScaled2x);
+      scaleBtn.classList.toggle("active", isScaled2x);
+
+      // If running inside a pop-out window, also resize the window bounds to fit 200%
+      if (window.opener || (window.innerWidth <= 820 && window.innerHeight <= 680)) {
+        try {
+          const targetW = isScaled2x ? 800 : 400;
+          const targetH = isScaled2x ? 600 : 300;
+          const chromeW = window.outerWidth - window.innerWidth;
+          const chromeH = window.outerHeight - window.innerHeight;
+          window.resizeTo(targetW + chromeW, targetH + chromeH);
+        } catch (e) {}
+      }
     }
 
     function setPlaylistPill(name) {
@@ -750,7 +780,7 @@
     function popOut() {
       // Cache-busting query string ensures the popup window loads the latest deployment
       const bustUrl = `${window.location.origin}${window.location.pathname}?v=${Date.now()}`;
-      window.open(bustUrl, "SpotifyMiniDeck", "width=400,height=300,menubar=no,toolbar=no,location=no,status=no,resizable=no");
+      window.open(bustUrl, "SpotifyMiniDeck", "width=400,height=300,menubar=no,toolbar=no,location=no,status=no,resizable=yes");
     }
 
     async function bootSpotify() {
