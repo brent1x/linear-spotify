@@ -137,7 +137,7 @@
       align-items: center;
       justify-content: center;
     }
-    .pop-pill:hover, .pop-pill.active { color: var(--text); border-color: var(--border-hover); }
+    .pop-pill:hover { color: var(--text); border-color: var(--border-hover); }
 
     .controls { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
     .ctrl-btn {
@@ -333,7 +333,8 @@
       const shell = document.getElementById("appShell");
       const scaleBtn = document.getElementById("scaleBtn");
       shell.classList.toggle("scale-2x", isScaled2x);
-      scaleBtn.classList.toggle("active", isScaled2x);
+      scaleBtn.textContent = isScaled2x ? "1x" : "2x";
+      scaleBtn.title = isScaled2x ? "Return to default size" : "Toggle 200% size";
 
       // If running inside a pop-out window, also resize the window bounds to fit 200%
       if (window.opener || (window.innerWidth <= 820 && window.innerHeight <= 680)) {
